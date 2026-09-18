@@ -303,6 +303,22 @@ impl Writer {
         out.push(' ');
     }
 
+    /// Ends a row with no background in effect.
+    ///
+    /// Terminals are free to extend whatever background colour is active when a
+    /// line ends across the remainder of that line, which smears the last
+    /// cell's colour out to the right edge — far past the rendered width. Going
+    /// into the line break with the background already reset leaves nothing to
+    /// extend.
+    fn end_row(&mut self, out: &mut String) {
+        if self.format == Format::Ansi
+            && matches!(self.previous_background, Some(Paint::Color(_)))
+        {
+            out.push_str(&format!("{ESC}49m"));
+            self.previous_background = Some(Paint::Default);
+        }
+    }
+
     fn paint(&mut self, out: &mut String, foreground: Paint, background: Paint) {
         if self.previous_foreground != Some(foreground) {
             match foreground {
@@ -416,6 +432,7 @@ pub fn render_block_mode(
             writer.write(&mut row, spec.glyphs[index], fit.foreground, fit.background);
             x += spec.sample_width;
         }
+        writer.end_row(&mut row);
         rows.push(row);
         y += spec.sample_height;
     }
@@ -512,6 +529,7 @@ pub fn render_glyph_fit(
             writer.write(&mut row, glyph, fit.foreground, fit.background);
             x += cell_width;
         }
+        writer.end_row(&mut row);
         rows.push(row);
         y += cell_height;
     }

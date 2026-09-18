@@ -11,7 +11,7 @@ fn renders_upper_and_lower_pixels_as_true_color_foreground_and_background() {
     let output = render_half_blocks(&[255, 0, 0, 0, 0, 255], 1, 2, Format::Ansi, None).unwrap();
     assert_eq!(
         output,
-        "\u{1b}[38;2;255;0;0m\u{1b}[48;2;0;0;255m▀\u{1b}[0m"
+        "\u{1b}[38;2;255;0;0m\u{1b}[48;2;0;0;255m▀\u{1b}[49m\u{1b}[0m"
     );
 }
 
@@ -76,8 +76,29 @@ fn glyph_fitting_solves_foreground_and_background_from_a_coverage_mask() {
     let output = render_glyph_fit(&[255, 0, 0, 0, 0, 255], 1, 2, &masks, Format::Ansi, None).unwrap();
     assert_eq!(
         output,
-        "\u{1b}[38;2;255;0;0m\u{1b}[48;2;0;0;255mX\u{1b}[0m"
+        "\u{1b}[38;2;255;0;0m\u{1b}[48;2;0;0;255mX\u{1b}[49m\u{1b}[0m"
     );
+}
+
+#[test]
+fn a_row_ends_with_the_background_reset() {
+    // Terminals may extend whatever background is active at the end of a line
+    // across the rest of that line, which would smear this cell's colour far
+    // past the rendered width. Nothing should be in effect going into the
+    // line break.
+    let output = render_half_blocks(&[255, 0, 0, 0, 0, 255], 1, 2, Format::Ansi, None).unwrap();
+    assert!(
+        output.ends_with("\u{1b}[49m\u{1b}[0m"),
+        "row should end with a background reset, got {output:?}"
+    );
+}
+
+#[test]
+fn a_row_of_unpainted_cells_needs_no_reset() {
+    let pixels = [0, 0, 0, 0, 0, 0];
+    let alpha = [0u8, 0];
+    let output = render_half_blocks(&pixels, 1, 2, Format::Ansi, Some(&alpha)).unwrap();
+    assert_eq!(output, "\u{1b}[39m\u{1b}[49m \u{1b}[0m");
 }
 
 #[test]
@@ -95,7 +116,12 @@ fn a_partly_transparent_cell_is_still_painted() {
     let pixels = [10, 20, 30, 40, 50, 60];
     let alpha = [0u8, 255];
     let output = render_half_blocks(&pixels, 1, 2, Format::Ansi, Some(&alpha)).unwrap();
-    assert!(!output.contains("[49m"), "should not reset the background");
+    // Every row now ends with a background reset, so "was this cell painted?"
+    // is answered by the absence of the unpainted cell's foreground reset.
+    assert!(
+        !output.contains("[39m"),
+        "the cell has an opaque pixel, so it must be painted"
+    );
     assert!(output.contains("38;2;10;20;30"));
 }
 
@@ -103,7 +129,7 @@ fn a_partly_transparent_cell_is_still_painted() {
 fn transparency_is_ignored_when_no_alpha_is_supplied() {
     let pixels = [0, 0, 0, 0, 0, 0];
     let output = render_half_blocks(&pixels, 1, 2, Format::Ansi, None).unwrap();
-    assert!(!output.contains("[49m"));
+    assert!(!output.contains("[39m"));
     assert!(output.contains("48;2;0;0;0"));
 }
 
