@@ -1,0 +1,68 @@
+name: Build Kale
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            runner: windows-latest
+            asset: kale-win-x64.zip
+            archive: zip
+          - name: macOS ARM64
+            runner: macos-14
+            asset: kale-macos-arm64.tar.gz
+            archive: tar
+          - name: Linux x64
+            runner: ubuntu-latest
+            asset: kale-linux-x64.tar.gz
+            archive: tar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run package
+      - name: Archive Windows package
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: Compress-Archive -Path dist\kale-win-x64\* -DestinationPath ${{ matrix.asset }} -Force
+      - name: Archive Unix package
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: tar -C dist -czf ${{ matrix.asset }} kale-*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --generate-notes --title "Kale ${GITHUB_REF_NAME}"

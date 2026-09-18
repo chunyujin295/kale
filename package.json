@@ -1,0 +1,19 @@
+{
+  "name": "kale",
+  "version": "0.1.0",
+  "private": true,
+  "description": "High-fidelity true-color terminal image renderer",
+  "type": "module",
+  "bin": {
+    "kale": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node --test",
+    "package": "node scripts/package-portable.mjs",
+    "package:win": "node scripts/package-portable.mjs"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
+}
