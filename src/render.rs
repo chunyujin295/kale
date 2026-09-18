@@ -251,13 +251,21 @@ fn fit_continuous_mask(samples: &[Rgb], mask: &[f64]) -> Option<Fit> {
     })
 }
 
+/// What a cell asks the terminal to paint with. `Default` means "the terminal's
+/// own colors", which is how a fully transparent cell stays transparent.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Paint {
+    Color(Rgb),
+    Default,
+}
+
 /// Emits cells while suppressing ANSI color sequences that would repeat the
 /// previous one. The suppression state carries across rows, matching the
 /// original writer, which is constructed once per render.
 struct Writer {
     format: Format,
-    previous_foreground: Option<Rgb>,
-    previous_background: Option<Rgb>,
+    previous_foreground: Option<Paint>,
+    previous_background: Option<Paint>,
 }
 
 impl Writer {
@@ -279,16 +287,58 @@ impl Writer {
             ));
             return;
         }
+        self.paint(out, Paint::Color(foreground), Paint::Color(background));
+        out.push(glyph);
+    }
+
+    /// A cell whose source pixels are all fully transparent. Nothing is painted,
+    /// so whatever the terminal uses as its own background shows through instead
+    /// of a rectangle of `--background`.
+    fn write_transparent(&mut self, out: &mut String) {
+        if self.format == Format::Html {
+            out.push_str("<span style=\"background:transparent\"> </span>");
+            return;
+        }
+        self.paint(out, Paint::Default, Paint::Default);
+        out.push(' ');
+    }
+
+    fn paint(&mut self, out: &mut String, foreground: Paint, background: Paint) {
         if self.previous_foreground != Some(foreground) {
-            out.push_str(&sgr_foreground(foreground));
+            match foreground {
+                Paint::Color(color) => out.push_str(&sgr_foreground(color)),
+                Paint::Default => out.push_str(&format!("{ESC}39m")),
+            }
             self.previous_foreground = Some(foreground);
         }
         if self.previous_background != Some(background) {
-            out.push_str(&sgr_background(background));
+            match background {
+                Paint::Color(color) => out.push_str(&sgr_background(color)),
+                Paint::Default => out.push_str(&format!("{ESC}49m")),
+            }
             self.previous_background = Some(background);
         }
-        out.push(glyph);
     }
+}
+
+/// True when every source pixel behind this cell is fully transparent, so the
+/// cell should not be painted at all.
+fn cell_is_transparent(
+    alpha: &[u8],
+    source_width: usize,
+    start_x: usize,
+    start_y: usize,
+    cell_width: usize,
+    cell_height: usize,
+) -> bool {
+    for y in 0..cell_height {
+        for x in 0..cell_width {
+            if alpha[(start_y + y) * source_width + start_x + x] != 0 {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn finish(rows: &[String], format: Format) -> String {
@@ -303,12 +353,17 @@ fn finish(rows: &[String], format: Format) -> String {
 
 /// Render half blocks, quadrant blocks, or Braille using the lowest-RGB-error
 /// two-color partition.
+///
+/// When `alpha` is supplied and a cell's source pixels are all fully
+/// transparent, that cell is left unpainted rather than filled with the color
+/// alpha was composited onto.
 pub fn render_block_mode(
     pixels: &[u8],
     width: usize,
     height: usize,
     mode: Mode,
     format: Format,
+    alpha: Option<&[u8]>,
 ) -> Result<String, String> {
     let spec = mode_spec(mode);
     if width % spec.sample_width != 0 || height % spec.sample_height != 0 {
@@ -320,6 +375,11 @@ pub fn render_block_mode(
     if pixels.len() != width * height * 3 {
         return Err("Expected packed RGB pixels.".to_string());
     }
+    if let Some(alpha) = alpha
+        && alpha.len() != width * height
+    {
+        return Err("Expected one alpha value per pixel.".to_string());
+    }
 
     let mut writer = Writer::new(format);
     let mut rows = Vec::with_capacity(height / spec.sample_height);
@@ -328,6 +388,15 @@ pub fn render_block_mode(
         let mut row = String::new();
         let mut x = 0;
         while x < width {
+            let transparent = alpha.is_some_and(|alpha| {
+                cell_is_transparent(alpha, width, x, y, spec.sample_width, spec.sample_height)
+            });
+            if transparent {
+                writer.write_transparent(&mut row);
+                x += spec.sample_width;
+                continue;
+            }
+
             let samples = pixels_for_cell(
                 pixels,
                 width,
@@ -359,11 +428,12 @@ pub fn render_half_blocks(
     width: usize,
     height: usize,
     format: Format,
+    alpha: Option<&[u8]>,
 ) -> Result<String, String> {
     if width < 1 || height < 2 {
         return Err("Image dimensions must be at least 1 × 2 pixels.".to_string());
     }
-    render_block_mode(pixels, width, height, Mode::Half, format)
+    render_block_mode(pixels, width, height, Mode::Half, format, alpha)
 }
 
 pub struct GlyphMask {
@@ -380,6 +450,7 @@ pub fn render_glyph_fit(
     height: usize,
     glyph_masks: &[GlyphMask],
     format: Format,
+    alpha: Option<&[u8]>,
 ) -> Result<String, String> {
     let Some(first) = glyph_masks.first() else {
         return Err("At least one glyph mask is required.".to_string());
@@ -387,6 +458,11 @@ pub fn render_glyph_fit(
     let (cell_width, cell_height) = (first.width, first.height);
     if width % cell_width != 0 || height % cell_height != 0 || pixels.len() != width * height * 3 {
         return Err("Glyph source dimensions are invalid.".to_string());
+    }
+    if let Some(alpha) = alpha
+        && alpha.len() != width * height
+    {
+        return Err("Expected one alpha value per pixel.".to_string());
     }
 
     let mut writer = Writer::new(format);
@@ -396,6 +472,15 @@ pub fn render_glyph_fit(
         let mut row = String::new();
         let mut x = 0;
         while x < width {
+            let transparent = alpha.is_some_and(|alpha| {
+                cell_is_transparent(alpha, width, x, y, cell_width, cell_height)
+            });
+            if transparent {
+                writer.write_transparent(&mut row);
+                x += cell_width;
+                continue;
+            }
+
             let samples = pixels_for_cell(pixels, width, x, y, cell_width, cell_height);
             let mut best: Option<(char, Fit)> = None;
             for glyph_mask in glyph_masks {

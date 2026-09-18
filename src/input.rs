@@ -3,14 +3,19 @@
 //! chain from the original `src/cli.js`.
 
 use image::imageops::FilterType;
-use image::{DynamicImage, ImageBuffer, Rgb, Rgba};
+use image::{DynamicImage, ImageBuffer, Luma, Rgb, Rgba};
 
 pub type Rgb8 = [u8; 3];
 
-/// A decoded image ready for rendering: packed RGB, already sized to the
-/// render grid (`columns * sample_width` by `rows * sample_height`).
+/// A decoded image ready for rendering: packed RGB plus the source alpha, both
+/// already sized to the render grid (`columns * sample_width` by
+/// `rows * sample_height`).
+///
+/// Alpha is carried through so the renderer can tell a cell that merely happens
+/// to match the background color from one that is genuinely transparent.
 pub struct Sampled {
     pub pixels: Vec<u8>,
+    pub alpha: Vec<u8>,
     pub width: usize,
     pub height: usize,
 }
@@ -59,6 +64,7 @@ pub fn flatten_and_resize(
     let (width, height) = rgba.dimensions();
 
     let mut flattened: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+    let mut source_alpha: ImageBuffer<Luma<u8>, Vec<u8>> = ImageBuffer::new(width, height);
     for (x, y, pixel) in rgba.enumerate_pixels() {
         let Rgba([r, g, b, a]) = *pixel;
         let alpha = a as u32;
@@ -73,6 +79,7 @@ pub fn flatten_and_resize(
             out[channel] = value as u8;
         }
         flattened.put_pixel(x, y, Rgb(out));
+        source_alpha.put_pixel(x, y, Luma([a]));
     }
 
     // sharp leaves the image untouched when the target already matches, and its
@@ -83,6 +90,7 @@ pub fn flatten_and_resize(
             width: target_width as usize,
             height: target_height as usize,
             pixels: flattened.into_raw(),
+            alpha: source_alpha.into_raw(),
         });
     }
 
@@ -92,10 +100,21 @@ pub fn flatten_and_resize(
         target_height,
         FilterType::Lanczos3,
     );
+    // Triangle rather than Lanczos: only "is this cell entirely transparent" is
+    // read off this plane, and Lanczos overshoot could drive a mostly opaque
+    // cell to zero. A filter with no negative lobes keeps transparent regions
+    // zero and lets opaque neighbours bleed in, which errs toward painting.
+    let resized_alpha = image::imageops::resize(
+        &source_alpha,
+        target_width,
+        target_height,
+        FilterType::Triangle,
+    );
 
     Ok(Sampled {
         width: resized.width() as usize,
         height: resized.height() as usize,
         pixels: resized.into_raw(),
+        alpha: resized_alpha.into_raw(),
     })
 }

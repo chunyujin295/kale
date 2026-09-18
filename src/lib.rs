@@ -32,6 +32,9 @@ pub struct Options {
     pub format: Format,
     pub background: [u8; 3],
     pub font: String,
+    /// Leave cells that are fully transparent in the source unpainted, so the
+    /// terminal's own background shows through instead of `background`.
+    pub transparent: bool,
 }
 
 /// Decodes `options.input`, scales it to the render grid, and renders it.
@@ -70,6 +73,8 @@ pub fn render_image(options: &Options) -> Result<String, String> {
         options.background,
     )?;
 
+    let alpha = options.transparent.then(|| sampled.alpha.as_slice());
+
     match glyph_masks {
         Some(masks) => render::render_glyph_fit(
             &sampled.pixels,
@@ -77,6 +82,7 @@ pub fn render_image(options: &Options) -> Result<String, String> {
             sampled.height,
             &masks,
             options.format,
+            alpha,
         ),
         None => render::render_block_mode(
             &sampled.pixels,
@@ -87,6 +93,7 @@ pub fn render_image(options: &Options) -> Result<String, String> {
                 .block_mode()
                 .ok_or("Unsupported render mode.".to_string())?,
             options.format,
+            alpha,
         ),
     }
 }

@@ -215,6 +215,7 @@ fn options(image: &str, mode: RenderMode, width: usize) -> Options {
         format: Format::Ansi,
         background: [0, 0, 0],
         font: "monospace".to_string(),
+        transparent: false,
     }
 }
 
