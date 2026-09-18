@@ -1,0 +1,6 @@
+# Statically link the MSVC C runtime. Without this the Windows build imports
+# VCRUNTIME140.dll, which is not guaranteed to be present on a machine that has
+# never installed a Visual C++ application. The Linux targets are musl and are
+# already self-contained; this only affects Windows.
+[target.'cfg(target_env = "msvc")']
+rustflags = ["-C", "target-feature=+crt-static"]

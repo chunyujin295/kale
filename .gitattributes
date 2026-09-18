@@ -1,0 +1,8 @@
+# Keep every text file at LF in the working copy, on every platform.
+#
+# This is not cosmetic: the reference renders in tests/golden/ are compared
+# cell by cell against renderer output, so if a Windows checkout converted them
+# to CRLF the golden tests would fail on a carriage return that the renderer
+# never emits. Pinning eol here keeps the working copy identical to what CI and
+# a fresh clone elsewhere will see.
+* text=auto eol=lf

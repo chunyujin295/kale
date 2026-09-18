@@ -1,0 +1,50 @@
+[package]
+name = "kale"
+version = "0.1.4"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+description = "High-fidelity true-color terminal image renderer"
+repository = "https://github.com/chunyujin295/kale"
+# Shown as the Manufacturer in the Windows installer. Change to whatever name
+# you want listed in "Apps & features".
+authors = ["chenyujin"]
+
+[dependencies]
+# default-features = false is deliberate: the default `default-formats` set pulls in
+# `avif`, which compiles the entire rav1e AV1 encoder. kale never encodes.
+image = { version = "0.25.10", default-features = false, features = [
+    "png",
+    "jpeg",
+    "gif",
+    "webp",
+    "tiff",
+    "bmp",
+] }
+fontdb = "0.24"
+fontdue = "0.9"
+
+[[bin]]
+name = "kale"
+path = "src/main.rs"
+
+# `publish = false` above keeps this off crates.io; dist still needs to be told
+# the binary is meant for release builds.
+[package.metadata.dist]
+dist = true
+
+[package.metadata.wix]
+upgrade-guid = "094E966B-DF07-4CD7-9931-728A4BC3B98C"
+path-guid = "68978F39-67F7-487C-B4F8-A8D3D9B667CF"
+license = false
+eula = false
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
