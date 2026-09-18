@@ -3,10 +3,14 @@
 <p align="center">
   <img src="./img/icons/icon1.png" alt="icon" width="200">
 </p>
-
 `kale` 将图片转换为高保真终端字符画。每个终端字符单元都拥有独立的 ANSI 24-bit True Color 前景色和背景色；它不是简单地给 ASCII 字符上色，而是为每个字符格拟合最接近原图的两种颜色。
 
 支持 Windows Terminal、WezTerm、kitty、iTerm2，以及现代 VS Code 集成终端等 True Color 终端。
+
+<p align="center">
+  <img src="./img/photo.png" alt="photo" width="400">
+    <img src="./img/photo-after.png" alt="photo-after" width="400">
+</p>
 
 ## 快速开始
 
