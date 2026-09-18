@@ -20,14 +20,17 @@ jobs:
         include:
           - name: Windows x64
             runner: windows-latest
+            directory: kale-win-x64
             asset: kale-win-x64.zip
             archive: zip
           - name: macOS ARM64
             runner: macos-14
+            directory: kale-macos-arm64
             asset: kale-macos-arm64.tar.gz
             archive: tar
           - name: Linux x64
             runner: ubuntu-latest
+            directory: kale-linux-x64
             asset: kale-linux-x64.tar.gz
             archive: tar
     steps:
@@ -42,11 +45,11 @@ jobs:
       - name: Archive Windows package
         if: matrix.archive == 'zip'
         shell: pwsh
-        run: Compress-Archive -Path dist\kale-win-x64\* -DestinationPath ${{ matrix.asset }} -Force
+        run: Compress-Archive -Path "dist\${{ matrix.directory }}\*" -DestinationPath ${{ matrix.asset }} -Force
       - name: Archive Unix package
         if: matrix.archive == 'tar'
         shell: bash
-        run: tar -C dist -czf ${{ matrix.asset }} kale-*
+        run: tar -C dist -czf ${{ matrix.asset }} ${{ matrix.directory }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
