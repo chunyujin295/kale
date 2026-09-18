@@ -65,7 +65,13 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+      - name: List release assets
+        run: ls -lh release-assets
       - name: Create GitHub Release
+        # gh needs an explicit repo here: this job never checks out the source,
+        # so there is no .git directory for gh to infer the repository from.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --generate-notes --title "Kale ${GITHUB_REF_NAME}"
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" release-assets/* --verify-tag --generate-notes --title "Kale $TAG"
