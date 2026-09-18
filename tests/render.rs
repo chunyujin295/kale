@@ -112,17 +112,30 @@ fn a_fully_transparent_cell_is_left_unpainted() {
 }
 
 #[test]
-fn a_partly_transparent_cell_is_still_painted() {
+fn a_partly_transparent_cell_defers_its_background_to_the_terminal() {
+    // Half the cell is image, half is nothing. Whatever colour we invented for
+    // the empty half would be a guess, so the terminal's background stands in.
     let pixels = [10, 20, 30, 40, 50, 60];
     let alpha = [0u8, 255];
     let output = render_half_blocks(&pixels, 1, 2, Format::Ansi, Some(&alpha)).unwrap();
-    // Every row now ends with a background reset, so "was this cell painted?"
-    // is answered by the absence of the unpainted cell's foreground reset.
     assert!(
-        !output.contains("[39m"),
-        "the cell has an opaque pixel, so it must be painted"
+        output.contains("\u{1b}[49m"),
+        "background should be the terminal's, got {output:?}"
     );
-    assert!(output.contains("38;2;10;20;30"));
+    assert!(
+        !output.contains("48;2;"),
+        "no background colour should be painted, got {output:?}"
+    );
+    assert!(output.contains("38;2;10;20;30"), "the glyph keeps its colour");
+}
+
+#[test]
+fn a_cell_without_transparency_still_paints_its_background() {
+    let pixels = [10, 20, 30, 40, 50, 60];
+    let alpha = [255u8, 255];
+    let output = render_half_blocks(&pixels, 1, 2, Format::Ansi, Some(&alpha)).unwrap();
+    assert!(output.contains("48;2;40;50;60"), "got {output:?}");
+    assert!(!output.contains("[39m"));
 }
 
 #[test]

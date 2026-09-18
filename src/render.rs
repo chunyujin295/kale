@@ -277,17 +277,22 @@ impl Writer {
         }
     }
 
-    fn write(&mut self, out: &mut String, glyph: char, foreground: Rgb, background: Rgb) {
+    fn write(&mut self, out: &mut String, glyph: char, foreground: Rgb, background: Paint) {
         if self.format == Format::Html {
             let [r, g, b] = foreground;
-            let [br, bg, bb] = background;
-            out.push_str(&format!(
-                "<span style=\"color:rgb({r} {g} {b});background:rgb({br} {bg} {bb})\">{}</span>",
-                escape_html(glyph)
-            ));
+            match background {
+                Paint::Color([br, bg, bb]) => out.push_str(&format!(
+                    "<span style=\"color:rgb({r} {g} {b});background:rgb({br} {bg} {bb})\">{}</span>",
+                    escape_html(glyph)
+                )),
+                Paint::Default => out.push_str(&format!(
+                    "<span style=\"color:rgb({r} {g} {b});background:transparent\">{}</span>",
+                    escape_html(glyph)
+                )),
+            }
             return;
         }
-        self.paint(out, Paint::Color(foreground), Paint::Color(background));
+        self.paint(out, Paint::Color(foreground), background);
         out.push(glyph);
     }
 
@@ -337,24 +342,43 @@ impl Writer {
     }
 }
 
-/// True when every source pixel behind this cell is fully transparent, so the
-/// cell should not be painted at all.
-fn cell_is_transparent(
+/// How much of a cell's source is fully transparent.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Transparency {
+    /// No transparent pixels: the cell is entirely image content.
+    None,
+    /// Some pixels are transparent but not all. Part of this cell is nothing at
+    /// all, so whatever background it is given is a guess — the terminal's own
+    /// background is the honest answer.
+    Partial,
+    /// Nothing but transparency: the cell should not be painted at all.
+    Full,
+}
+
+fn cell_transparency(
     alpha: &[u8],
     source_width: usize,
     start_x: usize,
     start_y: usize,
     cell_width: usize,
     cell_height: usize,
-) -> bool {
+) -> Transparency {
+    let total = cell_width * cell_height;
+    let mut transparent = 0usize;
     for y in 0..cell_height {
         for x in 0..cell_width {
-            if alpha[(start_y + y) * source_width + start_x + x] != 0 {
-                return false;
+            if alpha[(start_y + y) * source_width + start_x + x] == 0 {
+                transparent += 1;
             }
         }
     }
-    true
+    if transparent == 0 {
+        Transparency::None
+    } else if transparent == total {
+        Transparency::Full
+    } else {
+        Transparency::Partial
+    }
 }
 
 fn finish(rows: &[String], format: Format) -> String {
@@ -404,10 +428,10 @@ pub fn render_block_mode(
         let mut row = String::new();
         let mut x = 0;
         while x < width {
-            let transparent = alpha.is_some_and(|alpha| {
-                cell_is_transparent(alpha, width, x, y, spec.sample_width, spec.sample_height)
+            let transparency = alpha.map_or(Transparency::None, |alpha| {
+                cell_transparency(alpha, width, x, y, spec.sample_width, spec.sample_height)
             });
-            if transparent {
+            if transparency == Transparency::Full {
                 writer.write_transparent(&mut row);
                 x += spec.sample_width;
                 continue;
@@ -429,7 +453,11 @@ pub fn render_block_mode(
                 }
             }
             let (index, fit) = best.expect("every mode provides at least one mask");
-            writer.write(&mut row, spec.glyphs[index], fit.foreground, fit.background);
+            let background = match transparency {
+                Transparency::Partial => Paint::Default,
+                _ => Paint::Color(fit.background),
+            };
+            writer.write(&mut row, spec.glyphs[index], fit.foreground, background);
             x += spec.sample_width;
         }
         writer.end_row(&mut row);
@@ -489,10 +517,10 @@ pub fn render_glyph_fit(
         let mut row = String::new();
         let mut x = 0;
         while x < width {
-            let transparent = alpha.is_some_and(|alpha| {
-                cell_is_transparent(alpha, width, x, y, cell_width, cell_height)
+            let transparency = alpha.map_or(Transparency::None, |alpha| {
+                cell_transparency(alpha, width, x, y, cell_width, cell_height)
             });
-            if transparent {
+            if transparency == Transparency::Full {
                 writer.write_transparent(&mut row);
                 x += cell_width;
                 continue;
@@ -526,7 +554,11 @@ pub fn render_glyph_fit(
                     },
                 )
             });
-            writer.write(&mut row, glyph, fit.foreground, fit.background);
+            let background = match transparency {
+                Transparency::Partial => Paint::Default,
+                _ => Paint::Color(fit.background),
+            };
+            writer.write(&mut row, glyph, fit.foreground, background);
             x += cell_width;
         }
         writer.end_row(&mut row);
