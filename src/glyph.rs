@@ -7,6 +7,8 @@
 //! glyph is rasterized at `height` pixels and then squeezed horizontally so its
 //! advance width fills the cell.
 
+use std::path::PathBuf;
+
 use fontdb::{Database, Family, Query};
 use fontdue::{Font, FontSettings};
 
@@ -93,22 +95,114 @@ fn sample_coverage(bitmap: &[u8], width: usize, height: usize, x: f32, y: f32) -
     (top * (1.0 - fy) + bottom * fy) / 255.0
 }
 
+/// Well-known font directories, used when the environment-driven scan comes up
+/// empty.
+///
+/// `Database::load_system_fonts()` builds its search paths out of `SYSTEMROOT`
+/// and `USERPROFILE`. Shells derived from MSYS2 — Git Bash, and terminals that
+/// inherit their environment — rewrite those to POSIX form, so the scan ends up
+/// looking in something like `/c/Windows\Fonts` and finds nothing. Paths here
+/// are hard-coded rather than read from the environment, which is the entire
+/// point: they cannot be rewritten out from under us.
+fn fallback_font_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    {
+        dirs.push(PathBuf::from(r"C:\Windows\Fonts"));
+        for variable in ["LOCALAPPDATA", "USERPROFILE"] {
+            // Only usable when the shell left them in Windows form.
+            if let Ok(value) = std::env::var(variable)
+                && value.starts_with(|c: char| c.is_ascii_alphabetic())
+            {
+                dirs.push(PathBuf::from(value).join(r"AppData\Local\Microsoft\Windows\Fonts"));
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        dirs.push(PathBuf::from("/System/Library/Fonts"));
+        dirs.push(PathBuf::from("/Library/Fonts"));
+        if let Ok(home) = std::env::var("HOME") {
+            dirs.push(PathBuf::from(home).join("Library/Fonts"));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        dirs.push(PathBuf::from("/usr/share/fonts"));
+        dirs.push(PathBuf::from("/usr/local/share/fonts"));
+        if let Ok(home) = std::env::var("HOME") {
+            dirs.push(PathBuf::from(&home).join(".fonts"));
+            dirs.push(PathBuf::from(&home).join(".local/share/fonts"));
+        }
+    }
+
+    dirs
+}
+
+fn query_font(database: &Database, font_family: &str) -> Option<fontdb::ID> {
+    database.query(&Query {
+        families: &[Family::Name(font_family), Family::Monospace],
+        ..Query::default()
+    })
+}
+
 /// Looks up `font_family`, falling back to the generic monospace family.
 fn load_font(font_family: &str) -> Result<Font, String> {
     let mut database = Database::new();
     database.load_system_fonts();
 
-    let query = Query {
-        families: &[Family::Name(font_family), Family::Monospace],
-        ..Query::default()
-    };
-    let id = database
-        .query(&query)
-        .ok_or_else(|| format!("No usable font found for '{font_family}'."))?;
+    let mut found = query_font(&database, font_family);
+    if found.is_none() {
+        for directory in fallback_font_dirs() {
+            if directory.is_dir() {
+                database.load_fonts_dir(directory);
+            }
+        }
+        found = query_font(&database, font_family);
+    }
+
+    let id = found.ok_or_else(|| {
+        format!(
+            "No usable font found for '{font_family}' ({} fonts available).",
+            database.len()
+        )
+    })?;
     let data = database
         .with_face_data(id, |data, _index| data.to_vec())
         .ok_or_else(|| format!("Could not read font data for '{font_family}'."))?;
 
     Font::from_bytes(data, FontSettings::default())
         .map_err(|error| format!("Could not parse font '{font_family}': {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Guards the fallback that rescues shells rewriting `SYSTEMROOT` into a
+    /// POSIX path (Git Bash and anything inheriting its environment). With the
+    /// environment-driven scan finding nothing, these directories are the only
+    /// source of fonts, so if they stop working glyph mode breaks for those
+    /// users entirely.
+    #[test]
+    fn the_fallback_directory_scan_finds_fonts() {
+        let mut database = Database::new();
+        let directories = fallback_font_dirs();
+        for directory in &directories {
+            database.load_fonts_dir(directory);
+        }
+        assert!(
+            !database.is_empty(),
+            "no fonts found in {directories:?}"
+        );
+    }
+
+    #[test]
+    fn the_default_family_resolves_to_a_usable_font() {
+        let masks = build_glyph_masks("monospace").expect("monospace should resolve");
+        assert_eq!(masks.len(), DEFAULT_GLYPHS.chars().count());
+    }
 }
