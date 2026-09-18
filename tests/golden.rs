@@ -215,6 +215,9 @@ fn options(image: &str, mode: RenderMode, width: usize) -> Options {
         format: Format::Ansi,
         background: [0, 0, 0],
         font: "monospace".to_string(),
+        // The CLI leaves transparent cells unpainted by default, but these
+        // references predate that option, so the opaque path is what is being
+        // compared here. It is still what `--opaque` selects.
         transparent: false,
     }
 }

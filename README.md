@@ -76,9 +76,10 @@ kale <image> [options]
 | `-w, --width <columns>` | 字符画宽度，单位为终端列数，范围 1–1000 | `80` |
 | `-m, --mode <mode>` | 渲染模式：`half`、`quadrant`、`braille`、`glyph` | `half` |
 | `-f, --format <format>` | 输出格式：`ansi` 或 `html` | `ansi` |
-| `-b, --background <#rrggbb>` | 透明 PNG/WebP 的合成背景色 | `#000000` |
-| `-t, --transparent` | 完全透明的格子不绘制，露出终端自身背景 | 关闭 |
+| `-b, --background <#rrggbb>` | 半透明像素的合成背景色 | `#000000` |
+| `--opaque` | 连完全透明的格子也一并绘制 | 关闭 |
 | `--font <family>` | `glyph` 模式用于校准字形遮罩的字体 | `monospace` |
+| `-V, --version` | 显示版本 | — |
 | `-h, --help` | 显示帮助 | — |
 
 支持 PNG、JPEG、WebP、GIF 的静态首帧、TIFF 和 BMP。
@@ -130,13 +131,13 @@ kale logo.png -w 60 -m quadrant --background '#1e293b'
 
 ### 透明背景的 Logo（推荐给 Fastfetch 用）
 
-默认情况下，透明区域会被合成为一块 `--background` 色的实心矩形；在浅色主题的终端里，那会是一整块突兀的黑底。加上 `--transparent` 后，**完全透明**的格子不再绘制任何颜色，直接露出终端自己的背景：
+**完全透明**的格子不会被绘制，直接露出终端自己的背景 —— 透明背景的 Logo 因此不会带上一块实心矩形底：
 
 ```bash
-kale logo.png -w 36 -m quadrant --transparent
+kale logo.png -w 36 -m quadrant
 ```
 
-半透明的边缘像素仍然会合成到 `--background` 上，所以如果边缘出现描边，把 `--background` 设成你终端的实际背景色即可。
+半透明的边缘像素仍然会合成到 `--background` 上（这是必要的，程序无法知道你终端的背景到底是什么颜色），所以如果边缘出现一圈描边，把 `--background` 设成你终端的实际背景色即可。想让整个矩形区域都填满 `--background`，加 `--opaque`。
 
 ### 导出 HTML
 
@@ -151,11 +152,11 @@ kale photo.png -w 120 -m quadrant --format html > art.html
 Fastfetch 可以直接显示 ANSI 真彩字符画；一定使用 `file-raw`，它不会篡改文件里的 ANSI 转义序列。
 
 ```powershell
-kale .\logo.png -w 36 -m quadrant --transparent > $env:APPDATA\fastfetch\kale-logo.ansi
+kale .\logo.png -w 36 -m quadrant > $env:APPDATA\fastfetch\kale-logo.ansi
 fastfetch --file-raw $env:APPDATA\fastfetch\kale-logo.ansi
 ```
 
-Logo 通常带透明背景，所以这里建议加上 `--transparent`，透明处会直接露出终端的背景色，不必依赖 `--background` 去猜。
+Logo 的透明背景会直接露出终端的背景色，不必依赖 `--background` 去猜。
 
 将以下内容加入 Fastfetch 配置文件（可用 `fastfetch --list-config-paths` 找到目录）：
 

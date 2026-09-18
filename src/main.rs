@@ -12,14 +12,16 @@ Options:
   -w, --width       Terminal columns (default: 80)
   -m, --mode        half (default), quadrant, braille, or glyph
   -f, --format      ansi (default) or html
-  -b, --background  Flatten transparent pixels onto this color (default: #000000)
-  -t, --transparent Leave fully transparent cells unpainted
+  -b, --background  Flatten partial transparency onto this color (default: #000000)
+      --opaque      Paint every cell, including fully transparent ones
       --font        Font family used to calibrate glyph mode (default: monospace)
+  -V, --version     Show version
   -h, --help        Show this help
 ";
 
 enum Command {
     Help,
+    Version,
     Run(Options),
 }
 
@@ -38,6 +40,10 @@ fn run(args: &[String]) -> Result<(), String> {
     let options = match parse_args(args)? {
         Command::Help => {
             print!("{USAGE}");
+            return Ok(());
+        }
+        Command::Version => {
+            println!("kale {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         Command::Run(options) => options,
@@ -69,7 +75,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut format_raw: Option<String> = None;
     let mut background_raw: Option<String> = None;
     let mut font = String::from("monospace");
-    let mut transparent = false;
+    let mut opaque = false;
     let mut input: Option<String> = None;
 
     let mut index = 0;
@@ -77,6 +83,9 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         let arg = args[index].as_str();
         if arg == "-h" || arg == "--help" {
             return Ok(Command::Help);
+        }
+        if arg == "-V" || arg == "--version" {
+            return Ok(Command::Version);
         }
         if arg == "-w" || arg == "--width" {
             index += 1;
@@ -98,8 +107,8 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             // A trailing flag has no value; an empty string stands in for the
             // original's `undefined`, which failed the same validations.
             background_raw = Some(args.get(index).cloned().unwrap_or_default());
-        } else if arg == "-t" || arg == "--transparent" {
-            transparent = true;
+        } else if arg == "--opaque" {
+            opaque = true;
         } else if arg == "--font" {
             index += 1;
             // A missing value keeps the default, as the original did.
@@ -155,6 +164,9 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         format,
         background,
         font,
-        transparent,
+        // Leaving transparent cells unpainted is the default: a transparent
+        // logo should show the terminal's own background, not a rectangle of
+        // --background. `--opaque` restores painting every cell.
+        transparent: !opaque,
     }))
 }
