@@ -1,5 +1,7 @@
 # Kale
 
+> kale取自于kaleidoscope【万花筒】【千变万化】
+
 <p align="center">
   <img src="./img/icons/icon1.png" alt="icon" width="200">
 </p>
